@@ -18,6 +18,10 @@
 
 package org.apache.flink.training.exercises.ridesandfares;
 
+import org.apache.flink.api.common.state.MapState;
+import org.apache.flink.api.common.state.MapStateDescriptor;
+import org.apache.flink.api.common.typeinfo.TypeHint;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -68,19 +72,38 @@ public class RidesAndFaresExercise extends ExerciseBase {
 		env.execute("Join Rides with Fares (java RichCoFlatMap)");
 	}
 
-	public static class EnrichmentFunction extends RichCoFlatMapFunction<TaxiRide, TaxiFare, Tuple2<TaxiRide, TaxiFare>> {
-
+	public static class EnrichmentFunction extends RichCoFlatMapFunction<TaxiRide, TaxiFare, Tuple2<TaxiRide, TaxiFare>> 
+	{
+		private transient MapState<Long, TaxiRide> ridesState;
+		private transient MapState<Long, TaxiFare> faresState;
 		@Override
-		public void open(Configuration config) throws Exception {
-			throw new MissingSolutionException();
+		public void open(Configuration config) throws Exception 
+		{
+			MapStateDescriptor<Long, TaxiRide> descr1 = new MapStateDescriptor("ridesMap", TypeInformation.of(new TypeHint<Long>() {}), TypeInformation.of(new TypeHint<TaxiRide>() {}));
+			ridesState = this.getRuntimeContext().getMapState(descr1);
+			
+			MapStateDescriptor<Long, TaxiFare> descr2 = new MapStateDescriptor("faresMap", TypeInformation.of(new TypeHint<Long>() {}), TypeInformation.of(new TypeHint<TaxiFare>() {}));
+			faresState = this.getRuntimeContext().getMapState(descr2);
+			//throw new MissingSolutionException();
 		}
 
 		@Override
-		public void flatMap1(TaxiRide ride, Collector<Tuple2<TaxiRide, TaxiFare>> out) throws Exception {
+		public void flatMap1(TaxiRide ride, Collector<Tuple2<TaxiRide, TaxiFare>> out) throws Exception 
+		{
+			//ride.rid
+			if(faresState.contains(ride.rideId))
+				out.collect(new Tuple2<TaxiRide, TaxiFare>(ride, faresState.get(ride.rideId)));
+			else
+				ridesState.put(ride.rideId, ride);
 		}
 
 		@Override
-		public void flatMap2(TaxiFare fare, Collector<Tuple2<TaxiRide, TaxiFare>> out) throws Exception {
+		public void flatMap2(TaxiFare fare, Collector<Tuple2<TaxiRide, TaxiFare>> out) throws Exception 
+		{
+			if(ridesState.contains(fare.rideId))
+				out.collect(new Tuple2<TaxiRide, TaxiFare>(ridesState.get(fare.rideId), fare) );
+			else
+				faresState.put(fare.rideId, fare);
 		}
 	}
 }
